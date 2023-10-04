@@ -3545,15 +3545,25 @@ async def test_publish_or_subscribe_without_valid_config_entry(
         await mqtt.async_subscribe(hass, "some-topic", record_calls, qos=0)
 
 
-@patch("homeassistant.components.mqtt.PLATFORMS", [Platform.LIGHT])
+@patch(
+    "homeassistant.components.mqtt.PLATFORMS",
+    [Platform.ALARM_CONTROL_PANEL, Platform.LIGHT],
+)
 @pytest.mark.parametrize(
     "hass_config",
     [
         {
             "mqtt": {
+                "alarm_control_panel": [
+                    {
+                        "name": "test_new_modern",
+                        "state_topic": "home/alarm",
+                        "command_topic": "home/alarm/set",
+                    },
+                ],
                 "light": [
                     {"name": "test_new_modern", "command_topic": "test-topic_new"}
-                ]
+                ],
             }
         }
     ],
@@ -3567,9 +3577,13 @@ async def test_disabling_and_enabling_entry(
     await mqtt_mock_entry()
     entry = hass.config_entries.async_entries(mqtt.DOMAIN)[0]
     assert entry.state is ConfigEntryState.LOADED
-    # Late discovery of a light
-    config = '{"name": "abc", "command_topic": "test-topic"}'
-    async_fire_mqtt_message(hass, "homeassistant/light/abc/config", config)
+    # Late discovery of a mqtt entity
+    config_alarm_control_panel = '{"name": "abc", "state_topic": "home/alarm", "command_topic": "home/alarm/set"}'
+    config_light = '{"name": "test_new_modern", "command_topic": "test-topic_new"}'
+    async_fire_mqtt_message(
+        hass, "homeassistant/alarm_control_panel/abc/config", config_alarm_control_panel
+    )
+    async_fire_mqtt_message(hass, "homeassistant/light/abc/config", config_light)
 
     # Disable MQTT config entry
     await hass.config_entries.async_set_disabled_by(
@@ -3578,6 +3592,10 @@ async def test_disabling_and_enabling_entry(
 
     await hass.async_block_till_done()
     await hass.async_block_till_done()
+    assert (
+        "MQTT integration is disabled, skipping setup of discovered item MQTT alarm_control_panel"
+        in caplog.text
+    )
     assert (
         "MQTT integration is disabled, skipping setup of discovered item MQTT light"
         in caplog.text
@@ -3594,6 +3612,7 @@ async def test_disabling_and_enabling_entry(
     assert new_mqtt_config_entry.state is ConfigEntryState.LOADED
 
     assert hass.states.get("light.test_new_modern") is not None
+    assert hass.states.get("alarm_control_panel.test_new_modern") is not None
 
 
 @patch("homeassistant.components.mqtt.PLATFORMS", [Platform.LIGHT])
